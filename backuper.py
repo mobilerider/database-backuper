@@ -106,7 +106,7 @@ class Backuper(object):
                 self.cloudfiles.create_object(self.backups_container, obj_name=daily_file_name, file_or_path=temp_gzip_file)
                 print 'Dump file `{name}` created'.format(name=daily_file_name)
 
-                if today.day == 29:
+                if today.day == 1:
                     monthly_file_name = path_join(self.backups_monthly_path, connection['HOST'], connection['NAME'] + '_' + str(today)) + '.sql.gzip'
                     print 'Copying `{src}` to `{dst}` (monthly backup)'.format(
                         src=daily_file_name,
