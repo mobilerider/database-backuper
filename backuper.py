@@ -1,19 +1,24 @@
 #!/usr/bin/env python
 
-import gzip
-from datetime import date
-import json
-from posixpath import join as path_join
+from __future__ import print_function
+
+from datetime import date, datetime
 from os import environ
+from posixpath import join as path_join
+from subprocess32 import check_output, STDOUT, CalledProcessError
 from tempfile import NamedTemporaryFile
-from subprocess import check_output, STDOUT, CalledProcessError
+import gzip
+import json
 
 import pyrax
-from mandrill import Mandrill
 from dj_database_url import parse as parse_db_url, SCHEMES as DB_ENGINES
 
 
 _DEFAULT = object()
+
+
+def println(*args, **kwargs):
+    print(*tuple([datetime.now()] + list(args)), **kwargs)
 
 
 class Backuper(object):
@@ -26,7 +31,8 @@ class Backuper(object):
     def setting(name, default=_DEFAULT):
         value = environ.get(name, default)
         if value is _DEFAULT:
-            raise EnvironmentError('Backuper: Setting `{name}` is not defined in the environment'.format(name=name))
+            raise EnvironmentError(
+                'Backuper: Setting `{name}` is not defined in the environment'.format(name=name))
         return value
 
     def __init__(self):
@@ -41,7 +47,6 @@ class Backuper(object):
         pyrax.set_credentials(self.setting('PYRAX_USERNAME'), pyrax_password)
 
         self.cloudfiles = pyrax.connect_to_cloudfiles()
-        self.mandrill = Mandrill(self.setting('MANDRILL_APIKEY'))
         self.settings = self.read_config()
 
     def read_config(self):
@@ -50,7 +55,7 @@ class Backuper(object):
     @staticmethod
     def clean_db_connection(connection):
         needed_keys = set(['NAME', 'USER', 'PASSWORD', 'HOST', ])
-        keys = set(connection.keys()).intersection(needed_keys)
+        keys = set([key for key in connection.keys() if bool(key)]).intersection(needed_keys)
         if len(keys) != len(needed_keys):
             raise ValueError('Backuper: Connection `{connection}` is missing this keys: {missing}'.format(
                 connection=repr(connection),
@@ -78,6 +83,7 @@ class Backuper(object):
         today = date.today()
         with NamedTemporaryFile() as temp_db_file, NamedTemporaryFile() as temp_gzip_file:
             try:
+                dump_file_name = path_join(self.backups_daily_path, connection['HOST'], connection['NAME'] + '_' + str(today)) + '.sql.gzip'
                 dump_args = [
                     'mysqldump',
                     '-h',
@@ -97,30 +103,36 @@ class Backuper(object):
                 ])
                 check_output(dump_args, stderr=STDOUT)
                 temp_db_file.seek(0)
+                println('SQL Dump file `{name}` created, compressing it...'.format(name=dump_file_name))
+
                 gzip_file = gzip.GzipFile(fileobj=temp_gzip_file, mode='wb')
                 gzip_file.writelines(temp_db_file)
                 gzip_file.close()
                 temp_gzip_file.seek(0)
+                println('SQL Dump file `{name}` compressed, uploading it...'.format(name=dump_file_name))
 
-                daily_file_name = path_join(self.backups_daily_path, connection['HOST'], connection['NAME'] + '_' + str(today)) + '.sql.gzip'
-                self.cloudfiles.create_object(self.backups_container, obj_name=daily_file_name, file_or_path=temp_gzip_file)
-                print 'Dump file `{name}` created'.format(name=daily_file_name)
+                self.cloudfiles.create_object(self.backups_container, obj_name=dump_file_name, file_or_path=temp_gzip_file)
+                println('Dump file `{container}/{name}` uploaded'.format(container=self.backups_container, name=dump_file_name))
 
                 if today.day == 1:
                     monthly_file_name = path_join(self.backups_monthly_path, connection['HOST'], connection['NAME'] + '_' + str(today)) + '.sql.gzip'
-                    print 'Copying `{src}` to `{dst}` (monthly backup)'.format(
-                        src=daily_file_name,
+                    println('Copying `{src}` to `{dst}` (monthly backup)'.format(
+                        src=dump_file_name,
                         dst=monthly_file_name,
-                    )
-                    self.cloudfiles.copy_object(self.backups_container, daily_file_name, self.backups_container, monthly_file_name)
+                    ))
+                    self.cloudfiles.copy_object(self.backups_container, dump_file_name, self.backups_container, monthly_file_name)
 
             except CalledProcessError, error:
-                print repr(error)
+                println(repr(error), error.__dict__)
+
+
+def main():
+    backuper = Backuper()
+    println('Dumping {count} databases.'.format(count=len(backuper.connections)))
+    for connection in backuper.connections:
+        println('Dumping `{host}/{db}`...'.format(host=connection['HOST'], db=connection['NAME']))
+        backuper.create_dump(connection)
 
 
 if __name__ == '__main__':
-    backuper = Backuper()
-    print 'Dumping {count} databases.'.format(count=len(backuper.connections))
-    for connection in backuper.connections:
-        print 'Dumping `{host}/{db}`...'.format(host=connection['HOST'], db=connection['NAME'])
-        backuper.create_dump(connection)
+    main()
