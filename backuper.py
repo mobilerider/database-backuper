@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 
+"""
+Simple database backup utility. Dumps any accessible MySQL (at the moment)
+database into a file, "gzip" it, and uploads it to Cloudfiles.
+"""
+
 from __future__ import print_function
 
 from datetime import date, datetime
@@ -19,6 +24,9 @@ _DEFAULT = object()
 
 
 def println(*args, **kwargs):
+    """
+    Simple `print` stub to include a timestamp of the message being printed.
+    """
     print(*tuple([datetime.now()] + list(args)), **kwargs)
 
 
@@ -27,14 +35,6 @@ class Backuper(object):
     backups_settings = 'backuper_settings.json'
     backups_daily_path = 'daily'
     backups_monthly_path = 'monthly'
-
-    @staticmethod
-    def setting(name, default=_DEFAULT):
-        value = environ.get(name, default)
-        if value is _DEFAULT:
-            raise EnvironmentError(
-                'Backuper: Setting `{name}` is not defined in the environment'.format(name=name))
-        return value
 
     def __init__(self):
         pyrax.set_setting('identity_type', self.setting('PYRAX_IDENTITY_TYPE', 'rackspace'))
@@ -50,11 +50,29 @@ class Backuper(object):
         self.cloudfiles = pyrax.connect_to_cloudfiles()
         self.settings = self.read_config()
 
+    @staticmethod
+    def setting(name, default=_DEFAULT):
+        """
+        Returns a value from the script's environment. Raises `EnvironmentError`
+        if the `name` variable is not found.
+        """
+        value = environ.get(name, default)
+        if value is _DEFAULT:
+            raise EnvironmentError(
+                'Backuper: Setting `{name}` is not defined in the environment'.format(name=name))
+        return value
+
     def read_config(self):
+        """
+        Returns the deserialized object that contains this script's settings
+        """
         return json.loads(self.cloudfiles.fetch_object(self.backups_container, self.backups_settings))
 
     @staticmethod
     def clean_db_connection(connection):
+        """
+        Validates/Cleans a database connection dictionary
+        """
         needed_keys = set(['NAME', 'USER', 'PASSWORD', 'HOST', ])
         keys = set([key for key in connection.keys() if bool(key)]).intersection(needed_keys)
         if len(keys) != len(needed_keys):
@@ -66,6 +84,17 @@ class Backuper(object):
 
     @property
     def connections(self):
+        """
+        Generates and caches the list of connections read from the settings file
+        This settings file must contain a `databases` key which is a dictionary
+        where the keys are names/alias (used to generate folder names) and the
+        values are the connection urls, in this format:
+
+        "<db-server>://<db-username>:<db-password>@<db-host>/<db-name>"
+
+        Where `db-server` must be `mysql`. Support for other database servers
+        may be added in the future.
+        """
         try:
             return self._connections
         except AttributeError:
@@ -82,6 +111,11 @@ class Backuper(object):
             return self._connections
 
     def create_dump(self, connection):
+        """
+        Creates a backup dump for a single connection dict, like one of the
+        `connections` property. This dict also contains a `FOLDER` key, which
+        specifies the "folder" where to place the backup file.
+        """
         today = date.today()
         with NamedTemporaryFile() as temp_db_file, NamedTemporaryFile() as temp_gzip_file:
             try:
@@ -129,6 +163,9 @@ class Backuper(object):
 
 
 def main():
+    """
+    Script's entry point
+    """
     backuper = Backuper()
     println('Dumping {count} databases.'.format(count=len(backuper.connections)))
     for connection in backuper.connections:
