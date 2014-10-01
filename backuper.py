@@ -11,6 +11,7 @@ import gzip
 import json
 
 import pyrax
+from slugify import slugify
 from dj_database_url import parse as parse_db_url, SCHEMES as DB_ENGINES
 
 
@@ -69,7 +70,7 @@ class Backuper(object):
             return self._connections
         except AttributeError:
             self._connections = []
-            for connection_url in self.settings['databases']:
+            for folder, connection_url in self.settings['databases'].items():
                 connection = parse_db_url(connection_url)
                 if connection['ENGINE'] == DB_ENGINES['mysql']:
                     self._connections.append(self.clean_db_connection(connection))
@@ -77,13 +78,14 @@ class Backuper(object):
                     raise ValueError('Backuper: `Only MySQL` is supported at the moment: {url}'.format(
                         url=connection_url,
                     ))
+                connection['FOLDER'] = slugify(folder)
             return self._connections
 
     def create_dump(self, connection):
         today = date.today()
         with NamedTemporaryFile() as temp_db_file, NamedTemporaryFile() as temp_gzip_file:
             try:
-                dump_file_name = path_join(self.backups_daily_path, connection['HOST'], connection['NAME'] + '_' + str(today)) + '.sql.gzip'
+                dump_file_name = path_join(self.backups_daily_path, connection['FOLDER'], connection['NAME'] + '_' + str(today)) + '.sql.gzip'
                 dump_args = [
                     'mysqldump',
                     '-h',
@@ -115,7 +117,7 @@ class Backuper(object):
                 println('Dump file `{container}/{name}` uploaded'.format(container=self.backups_container, name=dump_file_name))
 
                 if today.day == 1:
-                    monthly_file_name = path_join(self.backups_monthly_path, connection['HOST'], connection['NAME'] + '_' + str(today)) + '.sql.gzip'
+                    monthly_file_name = path_join(self.backups_monthly_path, connection['FOLDER'], connection['NAME'] + '_' + str(today)) + '.sql.gzip'
                     println('Copying `{src}` to `{dst}` (monthly backup)'.format(
                         src=dump_file_name,
                         dst=monthly_file_name,

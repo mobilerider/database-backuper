@@ -2,3 +2,4 @@ pyrax==1.9.2
 mandrill==1.0.56
 dj-database-url==0.3.0
 subprocess32==3.2.6
+awesome-slugify==1.6
