@@ -17,6 +17,7 @@ import json
 
 import pyrax
 from slugify import slugify
+from dateutil.parser import parse as parse_datetime
 from dj_database_url import parse as parse_db_url, SCHEMES as DB_ENGINES
 
 
@@ -30,15 +31,17 @@ def println(*args, **kwargs):
     print(*tuple([datetime.now()] + list(args)), **kwargs)
 
 
-class Backuper(object):
-    backups_container = 'backups'
-    backups_settings = 'backuper_settings.json'
-    backups_daily_path = 'daily'
-    backups_monthly_path = 'monthly'
+class RackspaceStoredSettings(object):
+    """
+    Base abstract class that reads settings from a JSON file in Cloudfiles and
+    also from the process environment.
+    """
+
+    cloudfiles_container = None
+    settings_object_name = None
 
     def __init__(self):
         pyrax.set_setting('identity_type', self.setting('PYRAX_IDENTITY_TYPE', 'rackspace'))
-
         pyrax_password = self.setting('PYRAX_PASSWORD', None) or self.setting('PYRAX_APIKEY', None)
         if pyrax_password is None:
             raise EnvironmentError(
@@ -46,12 +49,11 @@ class Backuper(object):
                 'are not defined in the environment. Backuper needs at '
                 'least one of them.')
         pyrax.set_credentials(self.setting('PYRAX_USERNAME'), pyrax_password)
-
         self.cloudfiles = pyrax.connect_to_cloudfiles()
         self.settings = self.read_config()
 
-    @staticmethod
-    def setting(name, default=_DEFAULT):
+    @classmethod
+    def setting(cls, name, default=_DEFAULT):
         """
         Returns a value from the script's environment. Raises `EnvironmentError`
         if the `name` variable is not found.
@@ -59,14 +61,25 @@ class Backuper(object):
         value = environ.get(name, default)
         if value is _DEFAULT:
             raise EnvironmentError(
-                'Backuper: Setting `{name}` is not defined in the environment'.format(name=name))
+                '{cls}: Setting `{name}` is not defined in the environment'.format(cls=cls.__name__, name=name))
         return value
 
     def read_config(self):
         """
         Returns the deserialized object that contains this script's settings
         """
-        return json.loads(self.cloudfiles.fetch_object(self.backups_container, self.backups_settings))
+        return json.loads(self.cloudfiles.fetch_object(self.cloudfiles_container, self.settings_object_name))
+
+
+class Backuper(RackspaceStoredSettings):
+    """
+    Backup (dump) creator class.
+    """
+
+    cloudfiles_container = backups_container = 'backups'
+    settings_object_name = backups_settings = 'backuper_settings.json'
+    backups_daily_path = 'daily'
+    backups_monthly_path = 'monthly'
 
     @staticmethod
     def clean_db_connection(connection):
@@ -161,6 +174,31 @@ class Backuper(object):
             except CalledProcessError, error:
                 println(repr(error), error.__dict__)
 
+    def house_keeping(self):
+        """
+        Checks for all files under `backups_daily_path` and deletes everything
+        older than the numbers of days indicated in the `days_to_keep` setting.
+        The default value is `7` if this setting is not present.
+
+        WARNING: This is a destructive operation, everything under the
+        `backups_daily_path` that is considered old will be deleted, no other
+        checks are done besides checking the name prefix (path) and the
+        modification date. Do not put anything under this path or this method
+        may try to delete it.
+        """
+        now = datetime.now()
+        days_to_keep = self.setting('days_to_keep', 7)
+        for obj in self.cloudfiles.list_container_objects(self.backups_container):
+            if not obj.name.startswith(self.backups_daily_path):
+                continue
+            println(obj.name)
+            obj.last_modified_timestamp = parse_datetime(obj.last_modified)
+            if (now - obj.last_modified_timestamp).days > days_to_keep:
+                println('Deleting file `{name}` (timestamp: {timestamp})'.format(
+                    name=obj.name,
+                    timestamp=obj.last_modified_timestamp,
+                ))
+                # obj.delete()
 
 def main():
     """
@@ -171,6 +209,7 @@ def main():
     for connection in backuper.connections:
         println('Dumping `{host}/{db}`...'.format(host=connection['HOST'], db=connection['NAME']))
         backuper.create_dump(connection)
+    backuper.house_keeping()
 
 
 if __name__ == '__main__':

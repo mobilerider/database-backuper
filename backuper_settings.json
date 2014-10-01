@@ -1,0 +1,12 @@
+{
+    "databases": {
+        "local-db": "mysql://root:lepass@localhost/dbname"
+    },
+    "days_to_keep": 7,
+    "notify": [
+        "email@domain.com",
+        "email2@domain.com"
+    ],
+    "notify_from": "no-reply@domain.com",
+    "notify_subject": "Database backup"
+}
