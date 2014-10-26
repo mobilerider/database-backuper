@@ -198,7 +198,7 @@ class Backuper(RackspaceStoredSettings):
                     name=obj.name,
                     timestamp=obj.last_modified_timestamp,
                 ))
-                # obj.delete()
+                obj.delete()
 
 def main():
     """
