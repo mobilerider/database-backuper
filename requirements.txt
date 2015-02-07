@@ -4,3 +4,4 @@ dj-database-url==0.3.0
 subprocess32==3.2.6
 awesome-slugify==1.6
 python-dateutil==1.5
+requests

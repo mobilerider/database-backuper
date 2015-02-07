@@ -1,30 +1,22 @@
 import sys
-import json
 
 from mandrill import Mandrill
 
-from backuper import RackspaceStoredSettings, Backuper
-
-_DEFAULT = object()
+from settings import RackspaceStoredSettings
 
 
 class ReportMailer(RackspaceStoredSettings):
-    cloudfiles_container = backups_container = Backuper.backups_container
-    settings_object_name = backups_settings = Backuper.backups_settings
+    """
+    Simple class to email the standard input using Mandrill
+    """
 
-    def __init__(self):
-        super(ReportMailer, self).__init__()
+    def __init__(self, *args, **kwargs):
+        super(ReportMailer, self).__init__(*args, **kwargs)
         try:
             self.mandrill = Mandrill(self.setting('MANDRILL_APIKEY'))
         except KeyError:
             raise EnvironmentError(
                 'Backuper: Setting `MANDRILL_APIKEY` is not defined in the environment')
-
-    def read_config(self):
-        """
-        Returns the deserialized object that contains this script's settings
-        """
-        return json.loads(self.cloudfiles.fetch_object(self.backups_container, self.backups_settings))
 
     def send_email(self, content, from_=None, to=None, subject=None, options=None):
         message = {

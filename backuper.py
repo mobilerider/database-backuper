@@ -8,13 +8,11 @@ database into a file, "gzip" it, and uploads it to Cloudfiles.
 from __future__ import print_function
 
 from datetime import datetime
-from os import environ
 from argparse import ArgumentParser
 # from posixpath import join as path_join
 from subprocess32 import check_output, STDOUT, CalledProcessError
 from tempfile import NamedTemporaryFile
 import gzip
-import json
 
 import pyrax
 from slugify import slugify
@@ -22,7 +20,7 @@ from dateutil.parser import parse as parse_datetime
 from dj_database_url import parse as parse_db_url, SCHEMES as DB_ENGINES
 
 
-_DEFAULT = object()
+from settings import RackspaceStoredSettings
 
 
 def println(*args, **kwargs):
@@ -30,46 +28,6 @@ def println(*args, **kwargs):
     Simple `print` stub to include a timestamp of the message being printed.
     """
     print(*tuple([datetime.now()] + list(args)), **kwargs)
-
-
-class RackspaceStoredSettings(object):
-    """
-    Base abstract class that reads settings from a JSON file in Cloudfiles and
-    also from the process environment.
-    """
-
-    cloudfiles_container = None
-    settings_object_name = None
-
-    def __init__(self, *args, **kwargs):
-        pyrax.set_setting('identity_type', self.setting('PYRAX_IDENTITY_TYPE', 'rackspace'))
-        pyrax_password = self.setting('PYRAX_PASSWORD', None) or self.setting('PYRAX_APIKEY', None)
-        if pyrax_password is None:
-            raise EnvironmentError(
-                'Backuper: Settings `PYRAX_PASSWORD` and `PYRAX_APIKEY` '
-                'are not defined in the environment. Backuper needs at '
-                'least one of them.')
-        pyrax.set_credentials(self.setting('PYRAX_USERNAME'), pyrax_password)
-        self.cloudfiles = pyrax.connect_to_cloudfiles()
-        self.settings = self.read_config()
-
-    @classmethod
-    def setting(cls, name, default=_DEFAULT):
-        """
-        Returns a value from the script's environment. Raises `EnvironmentError`
-        if the `name` variable is not found.
-        """
-        value = environ.get(name, default)
-        if value is _DEFAULT:
-            raise EnvironmentError(
-                '{cls}: Setting `{name}` is not defined in the environment'.format(cls=cls.__name__, name=name))
-        return value
-
-    def read_config(self):
-        """
-        Returns the deserialized object that contains this script's settings
-        """
-        return json.loads(self.cloudfiles.fetch_object(self.cloudfiles_container, self.settings_object_name))
 
 
 class Backuper(RackspaceStoredSettings):
