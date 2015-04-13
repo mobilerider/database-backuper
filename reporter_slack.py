@@ -6,14 +6,6 @@ import requests
 from settings import RackspaceStoredSettings
 
 
-# https://hooks.slack.com/services/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
-# {
-# "text": "This is posted to <#api> and comes from *backup-bot*.",
-# "channel": "#api",
-# "username": "backup-bot",
-# "icon_emoji": ":monkey_face:"
-# }
-
 class ReportSlacker(RackspaceStoredSettings):
 
     def __init__(self, *args, **kwargs):
@@ -26,7 +18,7 @@ class ReportSlacker(RackspaceStoredSettings):
             except KeyError:
                 raise EnvironmentError('Backuper: Setting `SLACK_WEBHOOK` is not defined in the environment')
 
-    def send_webhook_request(self, text, channel='#general', username='backup-bot', icon_emoji=':mega:', **kwargs):
+    def send_webhook_request(self, text, channel='#logs', username='backup-bot', icon_emoji=':mega:', **kwargs):
         message = {'text': text, 'channel': channel, 'username': username, 'icon_emoji': icon_emoji, }
         message.update(kwargs)
         return requests.post(self.webhook_url, data=json.dumps(message), headers={'content-type': 'application/json'})
