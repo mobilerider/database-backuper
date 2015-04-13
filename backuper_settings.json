@@ -1,8 +1,10 @@
 {
     "databases": {
-        "local-db": "mysql://root:lepass@localhost/dbname"
+        "local-db": "mysql://backuper:backuper@localhost/useless"
     },
-    "days_to_keep": 7,
+    "hours_to_keep": 72,
+    "days_to_keep": 30,
+    "months_to_keep": 12,
     "notify": [
         "email@domain.com",
         "email2@domain.com"
